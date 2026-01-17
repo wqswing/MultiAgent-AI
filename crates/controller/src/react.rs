@@ -6,6 +6,10 @@
 //! 3. Execute the action
 //! 4. Observe the result
 //! 5. Repeat until done or max iterations
+//!
+//! v0.2 Autonomous Capabilities:
+//! - Dynamic Context Compression (auto-compresses when token threshold exceeded)
+//! - Subagent Delegation (allows spawning child agents for subtasks)
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -16,6 +20,9 @@ use mutilAgent_core::{
     types::{AgentResult, HistoryEntry, Session, SessionStatus, TaskState, TokenUsage, UserIntent, ToolCallInfo},
     Error, Result,
 };
+
+use crate::context::{ContextCompressor, CompressionConfig, TruncationCompressor};
+use crate::delegation::{Delegator, DelegationRequest};
 
 /// ReAct controller configuration.
 #[derive(Debug, Clone)]
@@ -53,6 +60,11 @@ pub enum ReActAction {
     FinalAnswer(String),
     /// Continue thinking (no action yet).
     Think(String),
+    /// Delegate to a subagent (v0.2 autonomous capability).
+    Delegate {
+        objective: String,
+        context: String,
+    },
 }
 
 /// ReAct controller for executing complex tasks.
@@ -67,6 +79,12 @@ pub struct ReActController {
     store: Option<Arc<dyn ArtifactStore>>,
     /// Session store for persistence.
     session_store: Option<Arc<dyn SessionStore>>,
+    /// Context compressor for long sessions (v0.2).
+    compressor: Option<Arc<dyn ContextCompressor>>,
+    /// Compression configuration.
+    compression_config: CompressionConfig,
+    /// Delegator for subagent spawning (v0.2).
+    delegator: Option<Arc<dyn Delegator>>,
 }
 
 impl ReActController {
@@ -78,6 +96,9 @@ impl ReActController {
             tools: None,
             store: None,
             session_store: None,
+            compressor: Some(Arc::new(TruncationCompressor::new())), // Default compressor
+            compression_config: CompressionConfig::default(),
+            delegator: None,
         }
     }
 
@@ -102,6 +123,24 @@ impl ReActController {
     /// Set the session store.
     pub fn with_session_store(mut self, session_store: Arc<dyn SessionStore>) -> Self {
         self.session_store = Some(session_store);
+        self
+    }
+
+    /// Set the context compressor (v0.2 autonomous capability).
+    pub fn with_compressor(mut self, compressor: Arc<dyn ContextCompressor>) -> Self {
+        self.compressor = Some(compressor);
+        self
+    }
+
+    /// Set compression configuration.
+    pub fn with_compression_config(mut self, config: CompressionConfig) -> Self {
+        self.compression_config = config;
+        self
+    }
+
+    /// Set the delegator for subagent spawning (v0.2 autonomous capability).
+    pub fn with_delegator(mut self, delegator: Arc<dyn Delegator>) -> Self {
+        self.delegator = Some(delegator);
         self
     }
 
@@ -220,6 +259,19 @@ Always think before acting. Be concise and focused on the goal."#
             return ReActAction::Think(thought.trim().to_string());
         }
 
+        // Check for DELEGATE (v0.2 subagent pattern)
+        if response_trimmed.contains("DELEGATE:") {
+            if let Some((_delegate_part, rest)) = response_trimmed.split_once("DELEGATE:") {
+                let objective = rest.lines().next().unwrap_or("").trim().to_string();
+                let context = if let Some(ctx_pos) = rest.find("CONTEXT:") {
+                    rest[ctx_pos + 8..].lines().next().unwrap_or("").trim().to_string()
+                } else {
+                    String::new()
+                };
+                return ReActAction::Delegate { objective, context };
+            }
+        }
+
         // Default: treat as thought
         ReActAction::Think(response_trimmed.to_string())
     }
@@ -241,8 +293,22 @@ Always think before acting. Be concise and focused on the goal."#
             "Executing ReAct iteration"
         );
 
-        // Build messages and call LLM
-        let messages = self.build_messages(session);
+        // v0.2: Auto-compress context if threshold exceeded
+        let mut messages = self.build_messages(session);
+        if let Some(ref compressor) = self.compressor {
+            if compressor.needs_compression(&messages, &self.compression_config) {
+                tracing::info!("Context compression triggered - compressing history");
+                let result = compressor.compress(messages, &self.compression_config).await?;
+                messages = result.messages;
+                tracing::info!(
+                    messages_compressed = result.messages_compressed,
+                    estimated_tokens = result.estimated_tokens,
+                    "Context compressed"
+                );
+            }
+        }
+
+        // Call LLM with (possibly compressed) messages
         let response: LlmResponse = llm.chat(&messages).await?;
 
         // Update token usage
@@ -322,6 +388,44 @@ Always think before acting. Be concise and focused on the goal."#
                     tool_call: None,
                     timestamp: chrono_timestamp(),
                 });
+
+                Ok(None) // Continue loop
+            }
+
+            ReActAction::Delegate { objective, context } => {
+                // v0.2: Autonomous subagent delegation
+                tracing::info!(objective = %objective, "Spawning subagent for delegation");
+
+                let observation = if let Some(ref delegator) = self.delegator {
+                    let request = DelegationRequest::new(&objective)
+                        .with_context(&context);
+                    
+                    match delegator.delegate(request).await {
+                        Ok(result) => {
+                            if result.success {
+                                format!("Subagent completed successfully:\n{}", result.result)
+                            } else {
+                                format!("Subagent failed: {}", result.error.unwrap_or_default())
+                            }
+                        }
+                        Err(e) => format!("Delegation error: {}", e),
+                    }
+                } else {
+                    format!("Delegation not available (no delegator configured). Objective: {}", objective)
+                };
+
+                // Add delegation result to history
+                session.history.push(HistoryEntry {
+                    role: "user".to_string(),
+                    content: format!("DELEGATION RESULT: {}", observation),
+                    tool_call: None,
+                    timestamp: chrono_timestamp(),
+                });
+
+                // Update task state
+                if let Some(ref mut task_state) = session.task_state {
+                    task_state.observations.push(observation);
+                }
 
                 Ok(None) // Continue loop
             }
