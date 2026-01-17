@@ -1,0 +1,115 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/gateway",
+    "crates/controller",
+    "crates/skills",
+    "crates/store",
+    "crates/governance",
+    "crates/model_gateway",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["MutilAgent Team"]
+license = "MIT"
+repository = "https://github.com/mutilAgent/mutilAgent"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# Web framework
+axum = "0.7"
+axum-extra = { version = "0.9", features = ["json-lines"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+
+# LLM integration (Rig v0.28)
+rig-core = { version = "0.28", features = ["derive"] }
+
+# MCP Protocol
+async-mcp = "0.1"
+
+# Multi-modal support
+image = "0.25"
+base64 = "0.22"
+
+# AST parsing for code skeletonization
+syn = { version = "2", features = ["full", "parsing", "visit"] }
+quote = "1"
+proc-macro2 = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Storage
+dashmap = "6"
+uuid = { version = "1", features = ["v4"] }
+bytes = "1"
+
+# Phase 4: Production Hardening
+redis = { version = "0.24", features = ["tokio-comp"] }
+aws-config = "1.1"
+aws-sdk-s3 = "1.14"
+
+# Observability
+metrics = "0.22"
+metrics-exporter-prometheus = "0.13"
+opentelemetry = "0.22"
+opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.15"
+tracing-opentelemetry = "0.23"
+opentelemetry-jaeger = "0.21"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async traits
+async-trait = "0.1"
+
+# Internal crates
+mutilAgent-core = { path = "crates/core" }
+mutilAgent-gateway = { path = "crates/gateway" }
+mutilAgent-controller = { path = "crates/controller" }
+mutilAgent-skills = { path = "crates/skills" }
+mutilAgent-store = { path = "crates/store" }
+mutilAgent-governance = { path = "crates/governance" }
+mutilAgent-model-gateway = { path = "crates/model_gateway" }
+
+[package]
+name = "mutilAgent"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mutilAgent"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+axum.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+
+mutilAgent-core.workspace = true
+mutilAgent-gateway.workspace = true
+mutilAgent-controller.workspace = true
+mutilAgent-skills.workspace = true
+mutilAgent-store.workspace = true
+mutilAgent-governance.workspace = true
+mutilAgent-model-gateway.workspace = true

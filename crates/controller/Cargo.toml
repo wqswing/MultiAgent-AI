@@ -1,0 +1,22 @@
+[package]
+name = "mutilAgent-controller"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mutilAgent-core.workspace = true
+mutilAgent-store.workspace = true
+mutilAgent-skills.workspace = true
+mutilAgent-model-gateway.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+uuid.workspace = true
+anyhow.workspace = true
+dashmap.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

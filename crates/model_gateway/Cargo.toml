@@ -1,0 +1,17 @@
+[package]
+name = "mutilAgent-model-gateway"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mutilAgent-core.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+dashmap.workspace = true
+rig-core.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

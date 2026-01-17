@@ -1,0 +1,41 @@
+# MutilAgent Configuration
+
+[server]
+host = "0.0.0.0"
+port = 3000
+
+[gateway]
+# L0 Router settings
+routing_timeout_ms = 500
+semantic_cache_threshold = 0.95
+
+[controller]
+# L1 Controller settings
+max_react_iterations = 10
+state_persistence = true
+
+[store]
+# L3 Artifact Store settings
+# Threshold in characters for pass-by-reference
+large_content_threshold = 1000
+# Storage tier (memory, redis, s3)
+default_tier = "memory"
+
+[governance]
+# L4 Governance settings
+default_token_budget = 50000
+enable_tracing = true
+
+[model_gateway]
+# L-M Model Gateway settings
+default_provider = "openai"
+fallback_enabled = true
+
+# Provider configurations
+[model_gateway.providers.openai]
+enabled = true
+models = ["gpt-4o", "gpt-4o-mini"]
+
+[model_gateway.providers.anthropic]
+enabled = true
+models = ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
