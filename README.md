@@ -1,5 +1,11 @@
 # MutilAgent: Advanced Multi-Agent AI System
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Language](https://img.shields.io/badge/rust-1.75%2B-blue.svg)](https://www.rust-lang.org)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/yourusername/MutilAgent/actions)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Dockerfile)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 MutilAgent is a production-grade, layered AI agent framework built in Rust. It is designed for high-performance orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust enterprise features like semantic caching and circuit breakers.
 
 ## 🚀 Key Capabilities
@@ -176,5 +182,15 @@ curl http://localhost:3000/metrics
 - `crates/store`: Redis and S3 implementations.
 - `crates/governance`: Prometheus metrics, OpenTelemetry tracing.
 
-## License
-MIT
+## 📄 License
+
+This project is licensed under the **MIT License**.
+
+You are free to use, modify, and distribute this software under the terms of the license. See the [LICENSE](LICENSE) file for more details.
+
+### Summary of the MIT License
+- **Permissions**: Commercial use, Modification, Distribution, Private use.
+- **Limitations**: Liability, Warranty.
+- **Conditions**: License and copyright notice.
+
+Copyright (c) 2024 MutilAgent Contributors
