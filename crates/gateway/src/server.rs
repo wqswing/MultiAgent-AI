@@ -13,7 +13,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
-use mutilAgent_core::{
+use mutil_agent_core::{
     traits::{Controller, IntentRouter, SemanticCache},
     types::{AgentResult, NormalizedRequest, RequestContent, RequestMetadata, UserIntent},
     Result,
@@ -122,13 +122,13 @@ impl GatewayServer {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
-            .map_err(|e| mutilAgent_core::Error::gateway(format!("Failed to bind: {}", e)))?;
+            .map_err(|e| mutil_agent_core::Error::gateway(format!("Failed to bind: {}", e)))?;
 
         tracing::info!(addr = %addr, "Gateway server starting");
 
         axum::serve(listener, self.build_router())
             .await
-            .map_err(|e| mutilAgent_core::Error::gateway(format!("Server error: {}", e)))?;
+            .map_err(|e| mutil_agent_core::Error::gateway(format!("Server error: {}", e)))?;
 
         Ok(())
     }
@@ -252,7 +252,7 @@ async fn chat_handler(
     let request = NormalizedRequest {
         trace_id: trace_id.clone(),
         content: payload.message.clone(),
-        original_content: mutilAgent_core::types::RequestContent::Text(payload.message.clone()),
+        original_content: mutil_agent_core::types::RequestContent::Text(payload.message.clone()),
         refs: Vec::new(),
         metadata: RequestMetadata {
             user_id: payload.user_id,
@@ -439,17 +439,8 @@ async fn webhook_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DefaultRouter, InMemorySemanticCache};
-    use mutilAgent_model_gateway::MockLlmClient;
 
-    fn create_test_state() -> Arc<AppState> {
-        let mock_llm = Arc::new(MockLlmClient::new("test"));
-        Arc::new(AppState {
-            router: Arc::new(DefaultRouter::new()),
-            cache: Arc::new(InMemorySemanticCache::new(mock_llm)),
-            controller: None,
-        })
-    }
+
 
     #[tokio::test]
     async fn test_health_handler() {

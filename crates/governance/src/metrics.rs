@@ -1,7 +1,7 @@
 //! Metrics implementation using Prometheus.
 
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
-use mutilAgent_core::{Error, Result};
+use mutil_agent_core::{Error, Result};
 
 /// Initialize Prometheus recorder and return the handle.
 pub fn setup_metrics_recorder() -> Result<PrometheusHandle> {

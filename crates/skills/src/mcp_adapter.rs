@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use mutilAgent_core::{
+use mutil_agent_core::{
     types::{ToolDefinition, ToolOutput},
     Error, Result,
 };
@@ -148,8 +148,53 @@ impl McpToolAdapter {
         self.servers.iter().map(|e| e.key().clone()).collect()
     }
 
+    /// Helper to clone self reference if wrapped in Arc (trickier from &self inside impl)
+    /// Actually, usage inside McpRegistry usually holds the Arc. 
+    /// But get_tool is called on &self.
+    /// WE NEED TO CHANGE get_tool signature or usage? No, we can't change ToolRegistry trait easily.
+    /// BUT McpRegistry struct holds `adapter: Arc<McpToolAdapter>`.
+    /// When McpRegistry calls `self.adapter.get_tool()`, it's calling on `Arc<McpToolAdapter>`.
+    /// So `get_tool` has `&self`. We can't upgrade `&self` to `Arc<Self>` easily unless we use a weak ref or passed arc.
+    ///
+    /// ALTERNATIVE: `get_tool` on Adapter shouldn't return `Box<dyn Tool>`.
+    /// It should return `Option<ToolDefinition>`.
+    /// And `McpRegistry` (which HOLDS the Arc) constructs the `McpToolWrapper`.
+    ///
+    /// Let's REVERT the logic in `get_tool` to return `Option<ToolDefinition>` 
+    /// and move the wrapper construction to `McpRegistry`!
+    ///
+    /// Wait, `get_tool` signature in `McpToolAdapter` I just added returns `Result<Option<Box<dyn Tool>>>`.
+    /// Let's change it to return `Result<Option<ToolDefinition>>`.
+    pub async fn get_tool_definition(&self, name: &str) -> Result<Option<ToolDefinition>> {
+        // 1. Try exact match (server/tool)
+        if name.contains('/') {
+             let parts: Vec<&str> = name.splitn(2, '/').collect();
+             let server_name = parts[0];
+             
+             if let Some(server) = self.servers.get(server_name) {
+                 let conn = server.read().await;
+                 if conn.connected {
+                     if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
+                         return Ok(Some(def.clone()));
+                     }
+                 }
+             }
+        } else {
+            // Search all servers
+            for entry in self.servers.iter() {
+                let conn = entry.value().read().await;
+                if conn.connected {
+                     if let Some(def) = conn.tools.iter().find(|t| t.name.ends_with(name) || t.name == name) {
+                           return Ok(Some(def.clone()));
+                     }
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// List all tools from all connected servers.
-    pub async fn list_external_tools(&self) -> Vec<ToolDefinition> {
+    pub async fn list_tools(&self) -> Result<Vec<ToolDefinition>> {
         let mut all_tools = Vec::new();
         
         for entry in self.servers.iter() {
@@ -159,7 +204,7 @@ impl McpToolAdapter {
             }
         }
         
-        all_tools
+        Ok(all_tools)
     }
 
     /// Get tools from a specific server.
@@ -173,6 +218,36 @@ impl McpToolAdapter {
             }
         }
         Err(Error::mcp_adapter(format!("Server '{}' not found", server_name)))
+    }
+
+
+
+    /// Find a tool definition by name.
+    pub async fn find_tool(&self, name: &str) -> Option<ToolDefinition> {
+         if name.contains('/') {
+             let parts: Vec<&str> = name.splitn(2, '/').collect();
+             let server_name = parts[0];
+             // let tool_name = parts[1]; // unused
+             
+             if let Some(server) = self.servers.get(server_name) {
+                 let conn = server.read().await;
+                 if conn.connected {
+                     if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
+                         return Some(def.clone());
+                     }
+                 }
+             }
+        }
+        // Fallback: search all
+        for entry in self.servers.iter() {
+            let conn = entry.value().read().await;
+            if conn.connected {
+                 if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
+                     return Some(def.clone());
+                 }
+            }
+        }
+        None
     }
 
     /// Call a tool on an MCP server.
@@ -250,8 +325,35 @@ impl McpTool {
     }
 }
 
+/// A wrapper for a specific MCP tool returned by get_tool.
+pub struct McpToolWrapper {
+    pub adapter: Arc<McpToolAdapter>,
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
+}
+
 #[async_trait]
-impl mutilAgent_core::traits::Tool for McpTool {
+impl mutil_agent_core::traits::Tool for McpToolWrapper {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> &str {
+        &self.description
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        self.parameters.clone()
+    }
+
+    async fn execute(&self, args: serde_json::Value) -> Result<ToolOutput> {
+        self.adapter.call_tool(&self.name, args).await
+    }
+}
+
+#[async_trait]
+impl mutil_agent_core::traits::Tool for McpTool {
     fn name(&self) -> &str {
         "mcp"
     }
@@ -313,7 +415,7 @@ mod tests {
         let servers = adapter.list_servers();
         assert!(servers.contains(&"test-server".to_string()));
 
-        let tools = adapter.list_external_tools().await;
+        let tools = adapter.list_tools().await.unwrap();
         assert!(!tools.is_empty());
     }
 

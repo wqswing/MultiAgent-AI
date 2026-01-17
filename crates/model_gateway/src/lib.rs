@@ -1,3 +1,4 @@
+#![deny(unused)]
 //! L-M Model Gateway for MutilAgent.
 //!
 //! This crate provides:

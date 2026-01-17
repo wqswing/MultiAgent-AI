@@ -45,7 +45,7 @@ quote = "1"
 proc-macro2 = "1"
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 serde_yaml = "0.9"
 
@@ -80,16 +80,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1"
 
 # Internal crates
-mutilAgent-core = { path = "crates/core" }
-mutilAgent-gateway = { path = "crates/gateway" }
-mutilAgent-controller = { path = "crates/controller" }
-mutilAgent-skills = { path = "crates/skills" }
-mutilAgent-store = { path = "crates/store" }
-mutilAgent-governance = { path = "crates/governance" }
-mutilAgent-model-gateway = { path = "crates/model_gateway" }
+# Internal crates
+mutil_agent_core = { path = "crates/core" }
+mutil_agent_gateway = { path = "crates/gateway" }
+mutil_agent_controller = { path = "crates/controller" }
+mutil_agent_skills = { path = "crates/skills" }
+mutil_agent_store = { path = "crates/store" }
+mutil_agent_governance = { path = "crates/governance" }
+mutil_agent_model_gateway = { path = "crates/model_gateway" }
 
 [package]
-name = "mutilAgent"
+name = "mutil_agent"
 version.workspace = true
 edition.workspace = true
 
@@ -106,10 +107,10 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 
-mutilAgent-core.workspace = true
-mutilAgent-gateway.workspace = true
-mutilAgent-controller.workspace = true
-mutilAgent-skills.workspace = true
-mutilAgent-store.workspace = true
-mutilAgent-governance.workspace = true
-mutilAgent-model-gateway.workspace = true
+mutil_agent_core.workspace = true
+mutil_agent_gateway.workspace = true
+mutil_agent_controller.workspace = true
+mutil_agent_skills.workspace = true
+mutil_agent_store.workspace = true
+mutil_agent_governance.workspace = true
+mutil_agent_model_gateway.workspace = true

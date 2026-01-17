@@ -1,3 +1,4 @@
+#![deny(unused)]
 //! L0 Gateway & Router for MutilAgent.
 //!
 //! This crate provides the HTTP entry point for the system,

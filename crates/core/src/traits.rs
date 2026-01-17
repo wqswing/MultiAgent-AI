@@ -210,6 +210,36 @@ pub enum StorageTier {
 }
 
 // =============================================================================
+// L3 Memory Store Traits (RAG)
+// =============================================================================
+
+/// A single entry in the long-term memory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryEntry {
+    /// Unique ID of the entry.
+    pub id: String,
+    /// The text content of the memory.
+    pub content: String,
+    /// The vector embedding of the content.
+    pub embedding: Vec<f32>,
+    /// Metadata (e.g., origin, timestamp, tags).
+    pub metadata: std::collections::HashMap<String, String>,
+}
+
+/// Interface for vector database operations.
+#[async_trait]
+pub trait MemoryStore: Send + Sync {
+    /// Add a new entry to memory.
+    async fn add(&self, entry: MemoryEntry) -> Result<()>;
+
+    /// Search for similar entries.
+    async fn search(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<MemoryEntry>>;
+
+    /// Delete an entry by ID.
+    async fn delete(&self, id: &str) -> Result<()>;
+}
+
+// =============================================================================
 // L4 Governance Traits
 // =============================================================================
 

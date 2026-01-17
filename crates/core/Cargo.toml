@@ -1,5 +1,5 @@
 [package]
-name = "mutilAgent-core"
+name = "mutil_agent_core"
 version.workspace = true
 edition.workspace = true
 

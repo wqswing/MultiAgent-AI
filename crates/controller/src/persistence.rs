@@ -2,7 +2,7 @@
 
 use dashmap::DashMap;
 
-use mutilAgent_core::{
+use mutil_agent_core::{
     traits::SessionStore,
     types::Session,
     Result,
@@ -57,7 +57,7 @@ impl SessionStore for InMemorySessionStore {
     }
 
     async fn list_running(&self) -> Result<Vec<String>> {
-        use mutilAgent_core::types::SessionStatus;
+        use mutil_agent_core::types::SessionStatus;
         
         Ok(self
             .sessions
@@ -71,7 +71,7 @@ impl SessionStore for InMemorySessionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mutilAgent_core::types::{SessionStatus, TokenUsage};
+    use mutil_agent_core::types::{SessionStatus, TokenUsage};
 
     fn create_test_session(id: &str) -> Session {
         Session {

@@ -3,7 +3,8 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 
-use mutilAgent_core::{
+use std::sync::Arc;
+use mutil_agent_core::{
     traits::{Tool, ToolRegistry},
     types::{ToolDefinition, ToolOutput},
     Error, Result,
@@ -11,7 +12,7 @@ use mutilAgent_core::{
 
 /// Thread-safe wrapper for tools.
 struct ToolEntry {
-    tool: Box<dyn Tool>,
+    tool: Arc<dyn Tool>,
 }
 
 // Safety: Tool trait requires Send + Sync
@@ -62,20 +63,17 @@ impl ToolRegistry for DefaultToolRegistry {
             )));
         }
 
-        self.tools.insert(name, ToolEntry { tool });
+        self.tools.insert(name, ToolEntry { tool: Arc::from(tool) });
         Ok(())
     }
 
     async fn get(&self, name: &str) -> Result<Option<Box<dyn Tool>>> {
-        // Note: We can't actually return owned Box from DashMap
-        // This is a limitation; in practice, we use execute() directly
-        if self.tools.contains_key(name) {
-            // Return a marker that tool exists
-            // Actual execution should use execute() method
-            Ok(None) // Placeholder - tool exists but can't be borrowed
-        } else {
-            Ok(None)
+        if let Some(entry) = self.tools.get(name) {
+            // Return a wrapper that holds the Arc
+            let wrapper = LocalToolWrapper { tool: entry.tool.clone() };
+            return Ok(Some(Box::new(wrapper)));
         }
+        Ok(None)
     }
 
     async fn list(&self) -> Result<Vec<ToolDefinition>> {
@@ -102,6 +100,30 @@ impl ToolRegistry for DefaultToolRegistry {
         tracing::debug!(tool = %name, "Executing tool");
 
         entry.tool.execute(args).await
+    }
+}
+
+/// Wrapper for Arc<dyn Tool> to allow returning Box<dyn Tool>
+struct LocalToolWrapper {
+    tool: Arc<dyn Tool>,
+}
+
+#[async_trait]
+impl Tool for LocalToolWrapper {
+    fn name(&self) -> &str {
+        self.tool.name()
+    }
+    
+    fn description(&self) -> &str {
+        self.tool.description()
+    }
+    
+    fn parameters(&self) -> serde_json::Value {
+        self.tool.parameters()
+    }
+    
+    async fn execute(&self, args: serde_json::Value) -> Result<ToolOutput> {
+        self.tool.execute(args).await
     }
 }
 

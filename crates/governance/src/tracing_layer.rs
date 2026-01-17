@@ -1,6 +1,6 @@
 //! Distributed tracing configuration.
 
-use mutilAgent_core::{Error, Result};
+use mutil_agent_core::{Error, Result};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};

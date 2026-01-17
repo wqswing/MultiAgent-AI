@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use aws_sdk_s3::{Client, primitives::ByteStream};
 use bytes::Bytes;
 
-use mutilAgent_core::{
+use mutil_agent_core::{
     traits::ArtifactStore,
     types::RefId,
     Error, Result,
@@ -142,7 +142,7 @@ impl ArtifactStore for S3ArtifactStore {
         }
     }
 
-    async fn metadata(&self, id: &RefId) -> Result<Option<mutilAgent_core::traits::ArtifactMetadata>> {
+    async fn metadata(&self, id: &RefId) -> Result<Option<mutil_agent_core::traits::ArtifactMetadata>> {
         let key = self.key(id);
         
         match self.client.head_object()
@@ -152,7 +152,7 @@ impl ArtifactStore for S3ArtifactStore {
             .await
         {
             Ok(output) => {
-                use mutilAgent_core::traits::{ArtifactMetadata, StorageTier};
+                use mutil_agent_core::traits::{ArtifactMetadata, StorageTier};
                 
                 Ok(Some(ArtifactMetadata {
                     size: output.content_length.unwrap_or(0) as usize,

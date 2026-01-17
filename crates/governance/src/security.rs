@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use std::collections::HashSet;
 
-use mutilAgent_core::{
+use mutil_agent_core::{
     traits::SecurityProxy,
     types::{AgentResult, NormalizedRequest},
     Error, Result,
@@ -164,7 +164,7 @@ impl SecurityProxy for DefaultSecurityProxy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mutilAgent_core::types::RequestMetadata;
+    // use mutil_agent_core::types::RequestMetadata; // Removed unused
 
     #[tokio::test]
     async fn test_validate_request() {

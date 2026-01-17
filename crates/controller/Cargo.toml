@@ -1,14 +1,14 @@
 [package]
-name = "mutilAgent-controller"
+name = "mutil_agent_controller"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-mutilAgent-core.workspace = true
-mutilAgent-store.workspace = true
-mutilAgent-skills.workspace = true
-mutilAgent-model-gateway.workspace = true
-mutilAgent-governance.workspace = true
+mutil_agent_core.workspace = true
+mutil_agent_store.workspace = true
+mutil_agent_skills.workspace = true
+mutil_agent_model_gateway.workspace = true
+mutil_agent_governance.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
@@ -18,6 +18,7 @@ serde_yaml.workspace = true
 uuid.workspace = true
 anyhow.workspace = true
 dashmap.workspace = true
+chrono = "0.4.43"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

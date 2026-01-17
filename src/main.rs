@@ -1,3 +1,4 @@
+#![deny(unused)]
 //! MutilAgent - Multi-Agent AI System
 //!
 //! A layered, Rust-based multi-agent architecture supporting multi-modal ingestion,
@@ -5,18 +6,17 @@
 
 use std::sync::Arc;
 
-use mutilAgent_core::traits::{ToolRegistry, ArtifactStore, SessionStore};
-use mutilAgent_controller::ReActController;
-use mutilAgent_controller::react::ReActConfig;
-use mutilAgent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
-use mutilAgent_skills::{DefaultToolRegistry, EchoTool, CalculatorTool};
-use mutilAgent_store::{InMemoryStore, InMemorySessionStore, RedisSessionStore, S3ArtifactStore, TieredStore};
+use mutil_agent_core::traits::{ToolRegistry, ArtifactStore, SessionStore};
+use mutil_agent_controller::ReActController;
+use mutil_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
+use mutil_agent_skills::{DefaultToolRegistry, EchoTool, CalculatorTool};
+use mutil_agent_store::{InMemoryStore, InMemorySessionStore, RedisSessionStore, S3ArtifactStore, TieredStore};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     // Initialize tracing
-    mutilAgent_governance::configure_tracing()?;
+    mutil_agent_governance::configure_tracing()?;
 
 
     tracing::info!("Starting MutilAgent v{}", env!("CARGO_PKG_VERSION"));
@@ -64,9 +64,10 @@ async fn main() -> anyhow::Result<()> {
     // Initialize L1: Controller
     // =========================================================================
     let controller = Arc::new(
-        ReActController::new(ReActConfig::default())
+        ReActController::builder()
             .with_store(store.clone())
             .with_session_store(session_store.clone())
+            .build()
     );
     tracing::info!("L1 Controller initialized (mock ReAct)");
 
@@ -76,12 +77,12 @@ async fn main() -> anyhow::Result<()> {
     let router = Arc::new(DefaultRouter::new());
     
     // Initialize LLM Client for embeddings
-    use mutilAgent_core::traits::LlmClient;
-    let llm_client: Arc<dyn LlmClient> = match mutilAgent_model_gateway::create_default_client() {
+    use mutil_agent_core::traits::LlmClient;
+    let llm_client: Arc<dyn LlmClient> = match mutil_agent_model_gateway::create_default_client() {
         Ok(client) => Arc::new(client),
         Err(e) => {
             tracing::warn!("Failed to create default LLM client: {}. Semantic cache will fallback to exact match.", e);
-            Arc::new(mutilAgent_model_gateway::MockLlmClient::new("dummy"))
+            Arc::new(mutil_agent_model_gateway::MockLlmClient::new("dummy"))
         }
     };
     
@@ -127,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // Initialize L4: Observability (Metrics)
     // =========================================================================
-    let metrics_handle = mutilAgent_governance::setup_metrics_recorder()?;
+    let metrics_handle = mutil_agent_governance::setup_metrics_recorder()?;
     
     // =========================================================================
     // Start the server

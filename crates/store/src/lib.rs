@@ -1,3 +1,4 @@
+#![deny(unused)]
 //! L3 Artifact Store for MutilAgent.
 //!
 //! This crate provides tiered storage (Hot/Warm/Cold) for artifacts,
@@ -6,12 +7,13 @@
 pub mod memory;
 pub mod redis;
 pub mod s3;
+pub mod vector;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::sync::Arc;
 
-use mutilAgent_core::{
+use mutil_agent_core::{
     traits::{ArtifactMetadata, ArtifactStore, StorageTier},
     types::RefId,
     Result,
@@ -20,6 +22,7 @@ use mutilAgent_core::{
 pub use memory::{InMemoryStore, InMemorySessionStore};
 pub use redis::RedisSessionStore;
 pub use s3::S3ArtifactStore;
+pub use vector::SimpleVectorStore;
 
 /// Default threshold in bytes for pass-by-reference.
 /// Content larger than this will be stored in L3 and referenced by ID.

@@ -15,17 +15,17 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use mutilAgent_core::{
-    traits::{ArtifactStore, ChatMessage, Controller, LlmClient, LlmResponse, ToolRegistry, SessionStore},
+use mutil_agent_core::{
+    traits::{ChatMessage, Controller, LlmClient, LlmResponse, ToolRegistry, SessionStore},
     types::{AgentResult, HistoryEntry, Session, SessionStatus, TaskState, TokenUsage, UserIntent, ToolCallInfo},
     Error, Result,
 };
 
-use crate::context::{ContextCompressor, CompressionConfig, TruncationCompressor};
-use crate::delegation::{Delegator, DelegationRequest};
+use crate::capability::AgentCapability;
 
 // v0.3: Security Integration
-use mutilAgent_governance::Guardrail;
+// (Guardrail unused in pure Controller struct if verified via capabilities)
+// Keeping core imports minimal
 
 /// ReAct controller configuration.
 #[derive(Debug, Clone)]
@@ -77,96 +77,32 @@ pub enum ReActAction {
 /// ReAct controller for executing complex tasks.
 pub struct ReActController {
     /// Configuration.
-    config: ReActConfig,
+    pub(crate) config: ReActConfig,
     /// LLM client for reasoning.
-    llm: Option<Arc<dyn LlmClient>>,
+    pub(crate) llm: Option<Arc<dyn LlmClient>>,
     /// Tool registry for actions.
-    tools: Option<Arc<dyn ToolRegistry>>,
-    /// Artifact store for large outputs.
-    store: Option<Arc<dyn ArtifactStore>>,
+    pub(crate) tools: Option<Arc<dyn ToolRegistry>>,
     /// Session store for persistence.
-    session_store: Option<Arc<dyn SessionStore>>,
-    /// Context compressor for long sessions (v0.2).
-    compressor: Option<Arc<dyn ContextCompressor>>,
-    /// Compression configuration.
-    compression_config: CompressionConfig,
-    /// Delegator for subagent spawning (v0.2).
-    delegator: Option<Arc<dyn Delegator>>,
-    /// MCP Registry for autonomous server selection (v0.2).
-    mcp_registry: Option<Arc<mutilAgent_skills::McpRegistry>>,
-    /// Security guardrails for input/output validation (v0.3).
-    security: Option<Arc<dyn Guardrail>>,
+    pub(crate) session_store: Option<Arc<dyn SessionStore>>,
+    /// Agent capabilities (Unification of Compression, Delegation, MCP, Security).
+    pub(crate) capabilities: Vec<Arc<dyn AgentCapability>>,
 }
 
 impl ReActController {
-    /// Create a new ReAct controller.
+    /// Create a new builder for ReActController.
+    pub fn builder() -> crate::builder::ReActBuilder {
+        crate::builder::ReActBuilder::new()
+    }
+
+    /// Create a new ReAct controller with default config (legacy support).
     pub fn new(config: ReActConfig) -> Self {
         Self {
             config,
             llm: None,
             tools: None,
-            store: None,
             session_store: None,
-            compressor: Some(Arc::new(TruncationCompressor::new())), // Default compressor
-            compression_config: CompressionConfig::default(),
-            delegator: None,
-            mcp_registry: None,
-            security: None,
+            capabilities: Vec::new(),
         }
-    }
-
-    /// Set the LLM client.
-    pub fn with_llm(mut self, llm: Arc<dyn LlmClient>) -> Self {
-        self.llm = Some(llm);
-        self
-    }
-
-    /// Set the tool registry.
-    pub fn with_tools(mut self, tools: Arc<dyn ToolRegistry>) -> Self {
-        self.tools = Some(tools);
-        self
-    }
-
-    /// Set the artifact store.
-    pub fn with_store(mut self, store: Arc<dyn ArtifactStore>) -> Self {
-        self.store = Some(store);
-        self
-    }
-
-    /// Set the session store.
-    pub fn with_session_store(mut self, session_store: Arc<dyn SessionStore>) -> Self {
-        self.session_store = Some(session_store);
-        self
-    }
-
-    /// Set the context compressor (v0.2 autonomous capability).
-    pub fn with_compressor(mut self, compressor: Arc<dyn ContextCompressor>) -> Self {
-        self.compressor = Some(compressor);
-        self
-    }
-
-    /// Set compression configuration.
-    pub fn with_compression_config(mut self, config: CompressionConfig) -> Self {
-        self.compression_config = config;
-        self
-    }
-
-    /// Set the delegator for subagent spawning (v0.2 autonomous capability).
-    pub fn with_delegator(mut self, delegator: Arc<dyn Delegator>) -> Self {
-        self.delegator = Some(delegator);
-        self
-    }
-
-    /// Set the MCP registry for autonomous server selection (v0.2).
-    pub fn with_mcp_registry(mut self, registry: Arc<mutilAgent_skills::McpRegistry>) -> Self {
-        self.mcp_registry = Some(registry);
-        self
-    }
-
-    /// Set security guardrails for input/output validation (v0.3).
-    pub fn with_security(mut self, security: Arc<dyn Guardrail>) -> Self {
-        self.security = Some(security);
-        self
     }
 
     /// Create a new session.
@@ -176,7 +112,7 @@ impl ReActController {
             status: SessionStatus::Running,
             history: vec![HistoryEntry {
                 role: "system".to_string(),
-                content: self.build_system_prompt(goal),
+                content: Arc::new(self.build_system_prompt(goal)),
                 tool_call: None,
                 timestamp: chrono_timestamp(),
             }],
@@ -236,72 +172,60 @@ Always think before acting. Be concise and focused on the goal."#
         "Tools will be loaded when execution starts.".to_string()
     }
 
-    /// Build chat messages from session history.
-    fn build_messages(&self, session: &Session) -> Vec<ChatMessage> {
+    /// Build chat messages from session history (static version for capabilities).
+    pub fn build_messages_static(session: &Session) -> Vec<ChatMessage> {
         session
             .history
             .iter()
             .map(|entry| ChatMessage {
                 role: entry.role.clone(),
-                content: entry.content.clone(),
+                content: entry.content.to_string(),
                 tool_calls: None,
             })
             .collect()
+    }
+
+    /// Build chat messages from session history.
+    fn build_messages(&self, session: &Session) -> Vec<ChatMessage> {
+        Self::build_messages_static(session)
     }
 
     /// Parse the LLM response to extract action.
     fn parse_action(&self, response: &str) -> ReActAction {
         let response_trimmed = response.trim();
 
-        // Check for FINAL ANSWER
+        // 1. Check capabilities for custom actions (Delegation, MCP, etc.)
+        for cap in &self.capabilities {
+            if let Some(action) = cap.parse_action(response_trimmed) {
+                return action;
+            }
+        }
+
+        // 2. Check for FINAL ANSWER
         if let Some(answer) = response_trimmed.strip_prefix("FINAL ANSWER:") {
             return ReActAction::FinalAnswer(answer.trim().to_string());
         }
 
-        // Check for ACTION + ARGS pattern
-        if response_trimmed.contains("ACTION:") {
-            if let Some((_action_part, rest)) = response_trimmed.split_once("ACTION:") {
-                let action_line = rest.lines().next().unwrap_or("").trim();
-                
-                // Look for ARGS
-                let args = if let Some(args_pos) = rest.find("ARGS:") {
-                    let args_str = &rest[args_pos + 5..];
-                    let args_line = args_str.lines().next().unwrap_or("{}").trim();
-                    serde_json::from_str(args_line).unwrap_or(serde_json::json!({}))
-                } else {
-                    serde_json::json!({})
-                };
+        // 3. Check for ACTION + ARGS pattern (Core Tool Parsing)
+        // This is a simple parser; in production, use regex or more robust parsing
+        let lines: Vec<&str> = response_trimmed.lines().collect();
+        let mut tool_name = None;
+        let mut args_json = None;
 
-                return ReActAction::ToolCall {
-                    name: action_line.to_string(),
-                    args,
-                };
+        for line in lines {
+            if line.starts_with("ACTION:") {
+                tool_name = Some(line.trim_start_matches("ACTION:").trim().to_string());
+            } else if line.starts_with("ARGS:") {
+                args_json = Some(line.trim_start_matches("ARGS:").trim().to_string());
             }
         }
 
-        // Check for THOUGHT
-        if let Some(thought) = response_trimmed.strip_prefix("THOUGHT:") {
-            return ReActAction::Think(thought.trim().to_string());
-        }
-
-        // Check for DELEGATE (v0.2 subagent pattern)
-        if response_trimmed.contains("DELEGATE:") {
-            if let Some((_delegate_part, rest)) = response_trimmed.split_once("DELEGATE:") {
-                let objective = rest.lines().next().unwrap_or("").trim().to_string();
-                let context = if let Some(ctx_pos) = rest.find("CONTEXT:") {
-                    rest[ctx_pos + 8..].lines().next().unwrap_or("").trim().to_string()
-                } else {
-                    String::new()
-                };
-                return ReActAction::Delegate { objective, context };
-            }
-        }
-
-        // Check for MCP_SELECT (v0.2 autonomous MCP selection)
-        if response_trimmed.contains("MCP_SELECT:") {
-            if let Some((_mcp_part, rest)) = response_trimmed.split_once("MCP_SELECT:") {
-                let task_description = rest.lines().next().unwrap_or("").trim().to_string();
-                return ReActAction::McpSelect { task_description };
+        if let (Some(name), Some(args_str)) = (tool_name, args_json) {
+            match serde_json::from_str::<serde_json::Value>(args_str.as_str()) {
+                Ok(args) => return ReActAction::ToolCall { name, args },
+                Err(_) => {
+                     // If JSON fails, fall through to Think
+                }
             }
         }
 
@@ -326,39 +250,12 @@ Always think before acting. Be concise and focused on the goal."#
             "Executing ReAct iteration"
         );
 
-        // v0.2: Auto-compress context if threshold exceeded
-        let mut messages = self.build_messages(session);
-        if let Some(ref compressor) = self.compressor {
-            if compressor.needs_compression(&messages, &self.compression_config) {
-                tracing::info!("Context compression triggered - compressing history");
-                let result = compressor.compress(messages, &self.compression_config).await?;
-                messages = result.messages;
-                tracing::info!(
-                    messages_compressed = result.messages_compressed,
-                    estimated_tokens = result.estimated_tokens,
-                    "Context compressed"
-                );
-            }
+        // v0.3: Capabilities On-Pre-Reasoning Hook (Compression, Security, etc.)
+        for cap in &self.capabilities {
+            cap.on_pre_reasoning(session).await.map_err(|e| Error::controller(e.to_string()))?;
         }
 
-        // v0.3: Security check on input before LLM call
-        if let Some(ref security) = self.security {
-            // Check the last user message for security violations
-            if let Some(last_user_msg) = messages.iter().rev().find(|m| m.role == "user") {
-                let check = security.check_input(&last_user_msg.content).await?;
-                if !check.passed {
-                    tracing::warn!(
-                        reason = ?check.reason,
-                        violation = ?check.violation_type,
-                        "Security check failed on input"
-                    );
-                    return Err(Error::controller(format!(
-                        "Security violation: {}",
-                        check.reason.unwrap_or_else(|| "Unknown".to_string())
-                    )));
-                }
-            }
-        }
+        let messages = self.build_messages(session); // Rebuild messages after potential compression
 
         // Call LLM with (possibly compressed) messages
         let response: LlmResponse = llm.chat(&messages).await?;
@@ -378,7 +275,7 @@ Always think before acting. Be concise and focused on the goal."#
         // Add assistant response to history
         session.history.push(HistoryEntry {
             role: "assistant".to_string(),
-            content: response.content.clone(),
+            content: Arc::new(response.content.clone()),
             tool_call: None,
             timestamp: chrono_timestamp(),
         });
@@ -387,62 +284,25 @@ Always think before acting. Be concise and focused on the goal."#
         let action = self.parse_action(&response.content);
 
         match action {
-            ReActAction::FinalAnswer(answer) => {
-                // v0.3: Security check on output before returning
-                if let Some(ref security) = self.security {
-                    let check = security.check_output(&answer).await?;
-                    if !check.passed {
-                        tracing::warn!(
-                            reason = ?check.reason,
-                            violation = ?check.violation_type,
-                            "Security check failed on output"
-                        );
-                        return Err(Error::controller(format!(
-                            "Output security violation: {}",
-                            check.reason.unwrap_or_else(|| "Unknown".to_string())
-                        )));
+            ReActAction::FinalAnswer(ref answer) => {
+                // Check capabilities on execution (Security Output check)
+                for cap in &self.capabilities {
+                    if let Some(result) = cap.on_execute(&action, session).await? {
+                         // If a capability interrupts/handles FinalAnswer (e.g., blocks it), return that result
+                         // Standard security cap returns Err on violation, keeping this flow simple.
+                         match result {
+                             AgentResult::Error { .. } => return Ok(Some(result)),
+                             _ => {} // Ignore other results for FinalAnswer
+                         }
                     }
                 }
+                
                 tracing::info!(answer_len = answer.len(), "Task completed with final answer");
-                Ok(Some(AgentResult::Text(answer)))
+                Ok(Some(AgentResult::Text(answer.clone())))
             }
 
             ReActAction::ToolCall { name, args } => {
-                tracing::info!(tool = %name, "Executing tool call");
-
-                let observation = if let Some(ref tools) = self.tools {
-                    match tools.execute(&name, args.clone()).await {
-                        Ok(output) => {
-                            if output.success {
-                                format!("Tool '{}' succeeded:\n{}", name, output.content)
-                            } else {
-                                format!("Tool '{}' failed:\n{}", name, output.content)
-                            }
-                        }
-                        Err(e) => format!("Tool '{}' error: {}", name, e),
-                    }
-                } else {
-                    format!("Tool '{}' not available (no tools configured)", name)
-                };
-
-                // Add observation to history
-                session.history.push(HistoryEntry {
-                    role: "user".to_string(),
-                    content: format!("OBSERVATION: {}", observation),
-                    tool_call: Some(ToolCallInfo {
-                        name: name.clone(),
-                        arguments: args.clone(),
-                        result: Some(observation.clone()),
-                    }),
-                    timestamp: chrono_timestamp(),
-                });
-
-                // Update task state
-                if let Some(ref mut task_state) = session.task_state {
-                    task_state.observations.push(observation);
-                }
-
-                Ok(None) // Continue loop
+                self.handle_tool_call(session, name, args).await
             }
 
             ReActAction::Think(thought) => {
@@ -451,98 +311,48 @@ Always think before acting. Be concise and focused on the goal."#
                 // Ask the agent to take an action
                 session.history.push(HistoryEntry {
                     role: "user".to_string(),
-                    content: "Please take an action using a tool, or provide your FINAL ANSWER if the task is complete.".to_string(),
+                    content: Arc::new("Please take an action using a tool, or provide your FINAL ANSWER if the task is complete.".to_string()),
                     tool_call: None,
                     timestamp: chrono_timestamp(),
                 });
 
-                Ok(None) // Continue loop
-            }
-
-            ReActAction::Delegate { objective, context } => {
-                // v0.2: Autonomous subagent delegation
-                tracing::info!(objective = %objective, "Spawning subagent for delegation");
-
-                let observation = if let Some(ref delegator) = self.delegator {
-                    let request = DelegationRequest::new(&objective)
-                        .with_context(&context);
-                    
-                    match delegator.delegate(request).await {
-                        Ok(result) => {
-                            if result.success {
-                                format!("Subagent completed successfully:\n{}", result.result)
-                            } else {
-                                format!("Subagent failed: {}", result.error.unwrap_or_default())
-                            }
-                        }
-                        Err(e) => format!("Delegation error: {}", e),
-                    }
-                } else {
-                    format!("Delegation not available (no delegator configured). Objective: {}", objective)
-                };
-
-                // Add delegation result to history
-                session.history.push(HistoryEntry {
-                    role: "user".to_string(),
-                    content: format!("DELEGATION RESULT: {}", observation),
-                    tool_call: None,
-                    timestamp: chrono_timestamp(),
-                });
-
-                // Update task state
-                if let Some(ref mut task_state) = session.task_state {
-                    task_state.observations.push(observation);
+                // v0.4: Post-Execute Hook
+                for cap in &self.capabilities {
+                    cap.on_post_execute(session).await.map_err(|e| Error::controller(e.to_string()))?;
                 }
 
                 Ok(None) // Continue loop
             }
 
-            ReActAction::McpSelect { task_description } => {
-                // v0.2: Autonomous MCP server selection
-                tracing::info!(task = %task_description, "Selecting MCP server for task");
 
-                let observation = if let Some(ref registry) = self.mcp_registry {
-                    match registry.select_for_task(&task_description) {
-                        Some(server) => {
-                            // Connect to the selected server
-                            match registry.connect_server(&server.id).await {
-                                Ok(()) => format!(
-                                    "Selected and connected to MCP server '{}' ({}). Capabilities: {:?}. You can now use tools from this server.",
-                                    server.name, server.id, server.capabilities
-                                ),
-                                Err(e) => format!(
-                                    "Selected MCP server '{}' but connection failed: {}",
-                                    server.name, e
-                                ),
+            // Fallback: Check custom capability actions
+            _ => {
+                for cap in &self.capabilities {
+                     if let Some(result) = cap.on_execute(&action, session).await? {
+                         // Add observation to history if returned
+                         if let AgentResult::Text(observation) = &result {
+                             session.history.push(HistoryEntry {
+                                role: "user".to_string(),
+                                content: Arc::new(format!("OBSERVATION: {}", observation)),
+                                tool_call: None,
+                                timestamp: chrono_timestamp(),
+                            });
+                             // Update task state
+                            if let Some(ref mut task_state) = session.task_state {
+                                task_state.observations.push(Arc::new(observation.clone()));
                             }
+                         }
+                         
+                        // v0.4: Post-Execute Hook
+                        for cap in &self.capabilities {
+                            cap.on_post_execute(session).await.map_err(|e| Error::controller(e.to_string()))?;
                         }
-                        None => format!(
-                            "No suitable MCP server found for task: '{}'. Available servers: {:?}",
-                            task_description,
-                            registry.list_all().iter().map(|s| &s.name).collect::<Vec<_>>()
-                        ),
-                    }
-                } else {
-                    format!(
-                        "MCP Registry not configured. Cannot select server for: {}",
-                        task_description
-                    )
-                };
 
-                // Add MCP selection result to history
-                session.history.push(HistoryEntry {
-                    role: "user".to_string(),
-                    content: format!("MCP SELECTION RESULT: {}", observation),
-                    tool_call: None,
-                    timestamp: chrono_timestamp(),
-                });
-
-                // Update task state
-                if let Some(ref mut task_state) = session.task_state {
-                    task_state.observations.push(observation);
+                         return Ok(None); // Action handled, continue loop
+                     }
                 }
-
-                Ok(None) // Continue loop
+                 // If no capability handled it, default behavior (shouldn't happen if parsed correctly)
+                 Ok(None)
             }
         }
     }
@@ -573,6 +383,77 @@ Always think before acting. Be concise and focused on the goal."#
             ))))
         }
     }
+
+    async fn persist_session(&self, session: &Session) {
+        if self.config.persist_state {
+            if let Some(store) = &self.session_store {
+                if let Err(e) = store.save(session).await {
+                    tracing::warn!(error = %e, "Failed to save session state");
+                }
+            }
+        }
+    }
+
+    async fn validate_fast_action_security(&self, args: &serde_json::Value) -> Result<()> {
+        for cap in &self.capabilities {
+            if cap.name() == "security_guardrails" {
+                let mut temp_session = self.create_session("fast_action_check");
+                temp_session.history.push(HistoryEntry {
+                    role: "user".to_string(),
+                    content: Arc::new(serde_json::to_string(args).unwrap_or_default()),
+                    tool_call: None,
+                    timestamp: chrono_timestamp(),
+                });
+                cap.on_pre_reasoning(&mut temp_session).await.map_err(|e| Error::controller(e.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_tool_call(
+        &self,
+        session: &mut Session,
+        name: String,
+        args: serde_json::Value,
+    ) -> Result<Option<AgentResult>> {
+        tracing::info!(tool = %name, "Executing tool call");
+
+        let observation = if let Some(ref tools) = self.tools {
+            match tools.execute(&name, args.clone()).await {
+                Ok(output) => {
+                    if output.success {
+                        format!("Tool '{}' succeeded:\n{}", name, output.content)
+                    } else {
+                        format!("Tool '{}' failed:\n{}", name, output.content)
+                    }
+                }
+                Err(e) => format!("Tool '{}' error: {}", name, e),
+            }
+        } else {
+            format!("Tool '{}' not available (no tools configured)", name)
+        };
+
+        session.history.push(HistoryEntry {
+            role: "user".to_string(),
+            content: Arc::new(format!("OBSERVATION: {}", observation)),
+            tool_call: Some(ToolCallInfo {
+                name: name.clone(),
+                arguments: args,
+                result: Some(Arc::new(observation.clone())),
+            }),
+            timestamp: chrono_timestamp(),
+        });
+
+        if let Some(ref mut task_state) = session.task_state {
+            task_state.observations.push(Arc::new(observation));
+        }
+
+        for cap in &self.capabilities {
+            cap.on_post_execute(session).await.map_err(|e| Error::controller(e.to_string()))?;
+        }
+
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -580,18 +461,7 @@ impl Controller for ReActController {
     async fn execute(&self, intent: UserIntent) -> Result<AgentResult> {
         match intent {
             UserIntent::FastAction { tool_name, args } => {
-                // v0.3: Security check on tool args (as input)
-                if let Some(ref security) = self.security {
-                    let input_str = serde_json::to_string(&args).unwrap_or_default();
-                    let check = security.check_input(&input_str).await?;
-                    if !check.passed {
-                        tracing::warn!(?check, "Security check failed on fast action args");
-                        return Ok(AgentResult::Error {
-                            message: format!("Security violation: {}", check.reason.unwrap_or_default()),
-                            code: "SECURITY_VIOLATION".to_string(),
-                        });
-                    }
-                }
+                self.validate_fast_action_security(&args).await?;
 
                 // Fast path: direct tool execution
                 tracing::info!(tool = %tool_name, "Fast path execution");
@@ -614,7 +484,6 @@ impl Controller for ReActController {
                         }),
                     }
                 } else {
-                    // No tools available - mock response
                     Ok(AgentResult::Text(format!(
                         "Fast path: would execute tool '{}'. Tools not configured.",
                         tool_name
@@ -627,19 +496,29 @@ impl Controller for ReActController {
                 context_summary,
                 visual_refs,
             } => {
-                // v0.3: Security check on goal
-                if let Some(ref security) = self.security {
-                    let check = security.check_input(&goal).await?;
-                    if !check.passed {
-                        tracing::warn!(?check, "Security check failed on complex mission goal");
-                        return Ok(AgentResult::Error {
-                            message: format!("Security violation: {}", check.reason.unwrap_or_default()),
-                            code: "SECURITY_VIOLATION".to_string(),
-                        });
-                    }
+                let mut session = self.create_session(&goal);
+                
+                // v0.3: Capability On-Start Hook
+                for cap in &self.capabilities {
+                    cap.on_start(&mut session).await.map_err(|e| Error::controller(e.to_string()))?;
                 }
 
-                // Slow path: ReAct loop
+                // Add user context to history
+                session.history.push(HistoryEntry {
+                    role: "user".to_string(),
+                    content: Arc::new(if visual_refs.is_empty() {
+                        context_summary.clone()
+                    } else {
+                        format!("{}\n\nReferences: {:?}", context_summary, visual_refs)
+                    }),
+                    tool_call: None,
+                    timestamp: chrono_timestamp(),
+                });
+                
+                for cap in &self.capabilities {
+                     cap.on_pre_reasoning(&mut session).await.map_err(|e| Error::controller(e.to_string()))?;
+                }
+
                 tracing::info!(
                     goal = %goal,
                     context_len = context_summary.len(),
@@ -647,21 +526,6 @@ impl Controller for ReActController {
                     "Starting ReAct loop"
                 );
 
-                let mut session = self.create_session(&goal);
-
-                // Add user context to history
-                session.history.push(HistoryEntry {
-                    role: "user".to_string(),
-                    content: if visual_refs.is_empty() {
-                        context_summary.clone()
-                    } else {
-                        format!("{}\n\nReferences: {:?}", context_summary, visual_refs)
-                    },
-                    tool_call: None,
-                    timestamp: chrono_timestamp(),
-                });
-
-                // Execute ReAct loop
                 for iteration in 0..self.config.max_iterations {
                     if let Some(ref mut task_state) = session.task_state {
                         task_state.iteration = iteration;
@@ -671,31 +535,13 @@ impl Controller for ReActController {
                         Some(result) => {
                             session.updated_at = chrono_timestamp();
                             session.status = SessionStatus::Completed;
-                            
-                            // Persist final state
-                            if self.config.persist_state {
-                                if let Some(store) = &self.session_store {
-                                    if let Err(e) = store.save(&session).await {
-                                        tracing::warn!(error = %e, "Failed to save session state");
-                                    }
-                                }
-                            }
-                            
+                            self.persist_session(&session).await;
                             return Ok(result);
                         }
                         None => {
                             session.updated_at = chrono_timestamp();
-                            
-                            // Persist intermediate state
-                            if self.config.persist_state {
-                                if let Some(store) = &self.session_store {
-                                    if let Err(e) = store.save(&session).await {
-                                        tracing::warn!(error = %e, "Failed to save session state");
-                                    }
-                                }
-                            }
+                            self.persist_session(&session).await;
 
-                            // Check budget
                             if session.token_usage.is_exceeded() {
                                 session.status = SessionStatus::Failed;
                                 return Err(Error::BudgetExceeded {
@@ -708,12 +554,13 @@ impl Controller for ReActController {
                     }
                 }
 
-                // Max iterations reached
                 session.status = SessionStatus::Failed;
                 Err(Error::MaxIterationsExceeded(self.config.max_iterations))
             }
         }
     }
+
+
 
     async fn resume(&self, session_id: &str) -> Result<AgentResult> {
         tracing::warn!(session_id = session_id, "Resume not yet implemented");
@@ -722,7 +569,6 @@ impl Controller for ReActController {
 
     async fn cancel(&self, session_id: &str) -> Result<()> {
         tracing::info!(session_id = session_id, "Cancel requested");
-        // In full implementation, would mark session as cancelled in store
         Ok(())
     }
 }

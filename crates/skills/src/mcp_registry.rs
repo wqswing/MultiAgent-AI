@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use mutilAgent_core::{Result, Error};
+use mutil_agent_core::{Result, Error};
 use crate::mcp_adapter::{McpToolAdapter, McpTransport};
 
 /// Capability category for MCP servers.
@@ -136,6 +136,42 @@ impl McpServerInfo {
         self.keywords.iter().any(|k| k.to_lowercase().contains(&kw_lower))
             || self.name.to_lowercase().contains(&kw_lower)
             || self.description.to_lowercase().contains(&kw_lower)
+    }
+}
+
+// v0.3: Registry Unification
+use async_trait::async_trait;
+use serde_json::Value;
+use mutil_agent_core::traits::{Tool, ToolRegistry};
+use mutil_agent_core::types::{ToolDefinition, ToolOutput};
+
+#[async_trait]
+impl ToolRegistry for McpRegistry {
+    async fn register(&self, _tool: Box<dyn Tool>) -> Result<()> {
+        Err(Error::McpAdapter("Cannot register local tools directly to McpRegistry. Use register_server instead.".to_string()))
+    }
+
+    async fn get(&self, name: &str) -> Result<Option<Box<dyn Tool>>> {
+        // Delegate to adapter to find tool definition
+        if let Some(def) = self.adapter.get_tool_definition(name).await? {
+            let tool = crate::mcp_adapter::McpToolWrapper {
+                adapter: self.adapter.clone(),
+                name: def.name.clone(),
+                description: def.description.clone(),
+                parameters: def.parameters.clone(),
+            };
+            return Ok(Some(Box::new(tool)));
+        }
+        Ok(None)
+    }
+
+    async fn list(&self) -> Result<Vec<ToolDefinition>> {
+        self.adapter.list_tools().await
+    }
+
+    async fn execute(&self, name: &str, args: Value) -> Result<ToolOutput> {
+         // The adapter handles finding which server owns the tool
+         self.adapter.call_tool(name, args).await
     }
 }
 

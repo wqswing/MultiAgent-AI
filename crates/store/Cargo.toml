@@ -1,10 +1,10 @@
 [package]
-name = "mutilAgent-store"
+name = "mutil_agent_store"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-mutilAgent-core.workspace = true
+mutil_agent_core.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 bytes.workspace = true

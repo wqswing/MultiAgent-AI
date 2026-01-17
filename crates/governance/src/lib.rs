@@ -1,3 +1,4 @@
+#![deny(unused)]
 //! L4 Governance for MutilAgent.
 //!
 //! This crate provides:

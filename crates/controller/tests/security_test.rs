@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tokio;
-use mutilAgent_core::traits::{Controller, LlmClient, LlmResponse, ChatMessage};
-use mutilAgent_core::types::{AgentResult, UserIntent};
-use mutilAgent_core::LlmUsage;
-use mutilAgent_controller::react::{ReActController, ReActConfig};
-use mutilAgent_governance::guardrails::{CompositeGuardrail, PiiScanner};
+use mutil_agent_core::traits::{Controller, LlmClient, LlmResponse, ChatMessage};
+use mutil_agent_core::types::{AgentResult, UserIntent};
+use mutil_agent_core::LlmUsage;
+use mutil_agent_controller::react::{ReActController, ReActConfig};
+use mutil_agent_governance::guardrails::{CompositeGuardrail, PiiScanner};
 use async_trait::async_trait;
 
 // Mock LLM Client
@@ -12,7 +12,7 @@ struct MockLlm;
 
 #[async_trait]
 impl LlmClient for MockLlm {
-    async fn complete(&self, _prompt: &str) -> mutilAgent_core::Result<LlmResponse> {
+    async fn complete(&self, _prompt: &str) -> mutil_agent_core::Result<LlmResponse> {
         Ok(LlmResponse {
             content: "Mock response".to_string(),
             finish_reason: "stop".to_string(),
@@ -21,7 +21,7 @@ impl LlmClient for MockLlm {
         })
     }
 
-    async fn chat(&self, _messages: &[ChatMessage]) -> mutilAgent_core::Result<LlmResponse> {
+    async fn chat(&self, _messages: &[ChatMessage]) -> mutil_agent_core::Result<LlmResponse> {
         Ok(LlmResponse {
             content: "THOUGHT: I should ignore this.\nFINAL ANSWER: PII ignored.".to_string(),
             finish_reason: "stop".to_string(),
@@ -30,7 +30,7 @@ impl LlmClient for MockLlm {
         })
     }
 
-    async fn embed(&self, _text: &str) -> mutilAgent_core::Result<Vec<f32>> {
+    async fn embed(&self, _text: &str) -> mutil_agent_core::Result<Vec<f32>> {
         Ok(vec![0.0; 1536])
     }
 }
@@ -44,9 +44,11 @@ async fn test_security_pii_violation() {
     let guardrail = CompositeGuardrail::new()
         .add(Box::new(PiiScanner::new()));
         
-    let controller = ReActController::new(config)
+    let controller = ReActController::builder()
+        .with_config(config)
         .with_llm(Arc::new(MockLlm))
-        .with_security(Arc::new(guardrail));
+        .with_security(Arc::new(guardrail))
+        .build();
 
     // 2. Intent with PII (Email)
     let intent = UserIntent::ComplexMission {
@@ -55,18 +57,12 @@ async fn test_security_pii_violation() {
         visual_refs: vec![],
     };
 
-    // 3. Execute should fail (gracefully with AgentResult::Error)
+    // 3. Execute should fail (Security Block)
     let result = controller.execute(intent).await;
     
-    assert!(result.is_ok());
-    let agent_result = result.unwrap();
+    assert!(result.is_err());
+    let err = result.err().unwrap().to_string();
+    println!("Caught expected security error: {}", err);
     
-    match agent_result {
-        AgentResult::Error { message, code } => {
-            println!("Caught expected security error: {} (Code: {})", message, code);
-            assert!(message.contains("Security violation"));
-            assert!(code == "SECURITY_VIOLATION");
-        }
-        _ => panic!("Expected AgentResult::Error, got {:?}", agent_result),
-    }
+    assert!(err.contains("Security violation"));
 }
