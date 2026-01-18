@@ -2,10 +2,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Language](https://img.shields.io/badge/rust-1.75%2B-blue.svg)](https://www.rust-lang.org)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/wqswing/Multiagent-AI/actions)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/wqswing/MultiAgent-AI/actions)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Dockerfile)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Version](https://img.shields.io/badge/version-0.7.0-orange.svg)](https://github.com/wqswing/Multiagent-AI/releases/tag/v0.7)
+[![Version](https://img.shields.io/badge/version-0.7.0-orange.svg)](https://github.com/wqswing/MultiAgent-AI/releases/tag/v0.7)
 
 Multiagent is a production-grade, layered AI agent framework built in Rust. It is designed for high-performance orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust enterprise features like semantic caching, vector memory, and circuit breakers.
 
